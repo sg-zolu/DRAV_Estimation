@@ -31,8 +31,7 @@ library(sjPlot)
 
 ```{r load-data}
 # Load and inspect the data
-setwd("/Volumes/GEORGE_STORE/DRAV")
-data <- read.csv("Vair_hypothesis_testing_0.03.csv")
+data <- read.csv("data/Vair_hypothesis_testing_0.03.csv")
 
 #Criteria for analysis
 data <- subset(data, avg_pitch <= -60)
@@ -315,7 +314,7 @@ BD <- ggplot() +
 
 # Plot together
 ggsave(
-  "BD_Vair_ND_NEW_ggsave.png",
+  "BD__MD_Vair_ggsave.png",
   ggarrange(depth, BD, ncol = 1, nrow = 2, common.legend = TRUE,
           labels=c("A", "B"),
           font.label = list(size = 25, color = "black"),
@@ -440,11 +439,10 @@ criteria_Vair <- function(data) {
   return(data)
 }
 
-setwd("/Volumes/GEORGE_STORE/DRAV")
-df_Vair0.02 <- read.csv("Vair_hypothesis_testing_0.02.csv")
-df_Vair0.03 <- read.csv("Vair_hypothesis_testing_0.03.csv")
-df_Vair0.04 <- read.csv("Vair_hypothesis_testing_0.04.csv")
-df_Vair0.05 <- read.csv("Vair_hypothesis_testing_0.05.csv")
+df_Vair0.02 <- read.csv("data/Vair_hypothesis_testing_0.02.csv")
+df_Vair0.03 <- read.csv("data/Vair_hypothesis_testing_0.03.csv")
+df_Vair0.04 <- read.csv("data/Vair_hypothesis_testing_0.04.csv")
+df_Vair0.05 <- read.csv("data/Vair_hypothesis_testing_0.05.csv")
 
 df_Vair0.02 <- criteria_Vair(df_Vair0.02)
 df_Vair0.03 <- criteria_Vair(df_Vair0.03)
@@ -519,10 +517,10 @@ r.squaredGLMM(m0.05)
 #--
 # RMS sway dynamic acceleration ~ DRAV
 # Reading the Vair estimates with the kinematic parameters
-df_stroke0.02 <- read.csv("stroke_Vair_analysis_0.02.csv")
-df_stroke0.03 <- read.csv("stroke_Vair_analysis_0.03.csv")
-df_stroke0.04 <- read.csv("stroke_Vair_analysis_0.04.csv")
-df_stroke0.05 <- read.csv("stroke_Vair_analysis_0.05.csv")
+df_stroke0.02 <- read.csv("data/stroke_Vair_analysis_0.02.csv")
+df_stroke0.03 <- read.csv("data/stroke_Vair_analysis_0.03.csv")
+df_stroke0.04 <- read.csv("data/stroke_Vair_analysis_0.04.csv")
+df_stroke0.05 <- read.csv("data/stroke_Vair_analysis_0.05.csv")
 
 df_stroke0.02 <- criteria_Vair(df_stroke0.02)
 df_stroke0.03 <- criteria_Vair(df_stroke0.03)
