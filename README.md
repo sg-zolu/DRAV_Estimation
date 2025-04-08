@@ -6,7 +6,7 @@ This README provides guidance for understanding and running the R code used to p
 The accompanying R Markdown file (`DRAV_Estimation_Hypothesis_Testing.Rmd`) contains:
 
 1. **Data cleaning and preparation**
-2. **Mixed-effects modelling of DRAV vs. dive behaviour and body density**
+2. **Mixed-effects modelling of DRAV vs. maximum dive depth and body density**
 3. **Model selection using AIC and multimodel inference**
 4. **Bootstrap-based confidence intervals and predictions**
 5. **Sensitivity analyses across different drag coefficients**
@@ -19,7 +19,7 @@ The accompanying R Markdown file (`DRAV_Estimation_Hypothesis_Testing.Rmd`) cont
 The code expects the following file and folder organisation:
 
 ```
-/Volumes/GEORGE_STORE/DRAV/
+data
 ├── Vair_hypothesis_testing_0.02.csv
 ├── Vair_hypothesis_testing_0.03.csv
 ├── Vair_hypothesis_testing_0.04.csv
@@ -77,7 +77,7 @@ R-squared values (`r.squaredGLMM`) and model summaries are reported for each dra
 
 ## Output Files
 The script saves the following figure(s):
-- `BD_Vair_ND_NEW_ggsave.png` – marginal effects of BD and depth on DRAV
+- `BD_MD_Vair_ggsave.png` – Modeling the effects of BD and depth on DRAV
 - `NB_dep_lines.png` – DRAV vs. tissue density with neutral buoyancy contours
 
 ---
@@ -88,6 +88,6 @@ If you use this code or reproduce parts of this analysis, please cite the associ
 ---
 
 ## Contact
-For questions, please contact [Your Name] at [your.email@example.com] or visit [lab website].
+For questions, please contact George Sato at gs225@st-andrews.ac.uk.
 
 
