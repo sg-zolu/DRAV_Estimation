@@ -1,0 +1,554 @@
+---
+title: "Appendix: Statistical Analysis Code for DRAV Estimation"
+output:
+  pdf_document:
+    number_sections: true
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# For statistical analysis
+library(nlme)
+library(MuMIn)
+library(forecast)
+library(boot)
+
+# For plotting
+library(ggplot2)
+library(gridExtra)
+library(ggeffects) 
+library(ggpubr)
+library(ggnewscale)
+
+# For making a table
+library(sjPlot)
+```
+
+# Data preparation
+
+## Read the data
+
+```{r load-data}
+# Load and inspect the data
+setwd("/Volumes/GEORGE_STORE/DRAV")
+data <- read.csv("Vair_hypothesis_testing_0.03.csv")
+
+#Criteria for analysis
+data <- subset(data, avg_pitch <= -60)
+data <- subset(data, glide_duration >= 10)
+data <- subset(data, initial_depth <= 30)
+data <- subset(data, cvar_pitch < 0.1)
+data <- subset(data, cvar_roll < 0.1)
+data <- subset(data, Vair > 0)
+```
+
+## Mean DRAV for each individual
+```{r}
+# Identify the number of DRAV estimates obtained per individual
+round(tapply(data$Vair,data$individual,length),2)
+# Calculate the mean and SD for the DRAV estimates for each individual
+round(tapply(data$Vair,data$individual,mean),2)
+round(tapply(data$Vair,data$individual,sd),2)
+# Calculate the max and min for the DRAV estimates for each individual
+round(tapply(data$Vair,data$individual,max),2)
+round(tapply(data$Vair,data$individual,min),2)
+
+# Find the mean and SD for the maximum dive depth
+round(tapply(data$max_depth,data$individual,mean),2)
+round(tapply(data$max_depth,data$individual,sd),2)
+# Find the mean and SD for the average pitch during the descent glide
+round(tapply(data$avg_pitch,data$individual,mean),2)
+round(tapply(data$avg_pitch,data$individual,sd),2)
+# Find the mean and SD for the average speed
+round(tapply(data$avg_speed,data$individual,mean),2)
+round(tapply(data$avg_speed,data$individual,sd),2)
+# Find the mean and SD for the depth of stroke cessation
+round(tapply(data$initial_depth,data$individual,mean),2)
+round(tapply(data$initial_depth,data$individual,sd),2)
+```
+
+# Hypothesis testing
+
+We will be constructing statistical models to examine the effect of body density and maximum dive depth on DRAV.
+
+We will be assessing the following causal relationships:
+- The effect of maximum dive depth on DRAV
+- The effect of body density on DRAV
+
+## Checking for auto-correlation for time-series data
+
+```{r}
+# Global Plot Options
+plotopts <- theme(axis.text=element_text(size=20),axis.title = element_text(size=18),strip.text = element_text(size=20))
+
+# Check auto-correlation of Vair:
+acf(data$Vair)
+```
+This is the shape that you would exactly expect for an auto-correlated structure that has not been taken into account. We can try and fit a random effects model using nlme to see what auto-correlation function will take into account the auto-correlation in the model.
+
+```{r}
+# Construct the overall model with a simple AR(1) structure
+lmm.full.AR1 <- lme(Vair ~ max_depth + BD + max_depth*BD,
+                 random = ~1|individual, correlation = corAR1(form = ~ 1|individual),
+                data = data)
+
+summary(lmm.full.AR1)
+
+# Extract the residuals
+lmm.full.res <- residuals(lmm.full.AR1, type = "normalized")
+# Check for autocorrelation:
+lmm.full.acf<-autoplot(acf(lmm.full.res), main="") + theme_bw() + plotopts
+```
+Now auto-correlation is taken into account. This indicates that we can move on and use an AR(1) structure for further analysis.
+
+## AIC and dredging from multimodel inferences
+
+Using the global model that we have constructed, we will go through the dredge function to see which variable has a good model fit.
+Using AIC weights, we will move onto variable selection using the dredge function. 
+
+```{r}
+### Information Theory ###
+options(na.action = "na.fail") # make sure that variable selection
+# will NOT undergo if there are NAs (NOT OMIT)
+# This is because the number of data will make the AIC non-comparable
+
+# Here, we will initially conduct variable selection using the AIC 
+# approach; the Akaike weights of each variable
+
+# Set "method = ML" to make sure the models are comparable.
+lmm.full.test <- lme(Vair ~ max_depth + BD + max_depth*BD, random = ~1|individual, 
+                           correlation = corAR1(form = ~ 1|individual), data = data, method = "ML")
+
+# We will use the dredge function to see which model was selected.
+dredge(lmm.full.test)
+
+# Using the dredge function to compare the summed Akaike weight
+# for the variables in the global model.
+AIC.results <- dredge(lmm.full.test)
+
+# The results of the Akaike weights are shown here:
+sw(AIC.results)
+
+#                     max_depth BD   BD:max_depth
+# Sum of weights:      1.00 1.00      0.63        
+# N containing models:    3    3         1         
+
+# mod 1: AIC weights > 0.99
+mod1 <- lme(Vair ~ max_depth + BD, random = ~1|individual, 
+                           correlation = corAR1(form = ~ 1|individual), data = data, method = "ML")
+
+AIC(lmm.full.test, mod1)
+
+# mod2 has the lowest AIC, but all models does not have a huge difference (<10). We will continue our analysis with mod1, since it is the simpler model with similar explanatory power as the full model.
+
+# Comparing the AIC for different model structures
+m1 <- lme(Vair ~ 1, random = ~1|individual, 
+                           correlation = corAR1(form = ~ 1|individual), data = data, method = "ML")
+
+m2 <- lme(Vair ~ max_depth, random = ~1|individual, 
+                           correlation = corAR1(form = ~ 1|individual), data = data, method = "ML")
+
+m3 <- lme(Vair ~ BD, random = ~1|individual, 
+                           correlation = corAR1(form = ~ 1|individual), data = data, method = "ML")
+
+m4 <- lme(Vair ~ max_depth + BD, random = ~1|individual, 
+                           correlation = corAR1(form = ~ 1|individual), data = data, method = "ML")
+
+m5 <- lme(Vair ~ max_depth + BD + max_depth*BD, random = ~1|individual, 
+                           correlation = corAR1(form = ~ 1|individual), data = data, method = "ML")
+
+AIC(m1,m2,m3,m4,m5)
+
+```
+
+mod1, mod2 and mod3 had an AIC difference less than 10, which indicates that the two models are not too different. 
+
+From this result, we will use mod1, the simple model for testing how the animal changes its air volume depending on dive depth and BD.
+
+Now the final model was selected, we will look into the summary table of the final model.
+```{r}
+# We will now treat Individual as a random effect:
+final <- lme(Vair ~ max_depth + BD, random = ~1|individual, 
+                           correlation = corAR1(form = ~ 1|individual), data = data)
+
+### Final Model ###
+# The final global model:
+summary(final)
+summary(final)$coefficients
+
+# Extract the correlation structure from the model
+correlation_structure <- final$modelStruct$corStruct
+# Extract the AR(1) coefficient (autocorrelation parameter)
+ar1_coefficient <- coef(correlation_structure, unconstrained = FALSE)
+ar1_coefficient
+
+# Checking assumptions
+par(mfrow=c(1,1))
+# Checking the variance of the residuals
+plot(final)
+# Checking the distribution of the residuals
+qqnorm(resid(final))
+qqline(resid(final))
+hist(resid(final))
+
+```
+
+## Prediction
+Now we have selected mod1 as the model that describes how the seals vary their air volume.
+Using the described model, we will calculate the predicted values of Vair with Duration and body density.
+
+Make new data frames to predict Vair in relation to each continuous variable - this will be done by holding one of each continuous variable constant.
+
+```{r}
+## Create a dataframe for the predicted values.
+
+# Only varying maximum dive depth
+pred.df.dep <- data.frame(Vair = data$Vair, BD = mean(data$BD), max_depth = data$max_depth, individual = factor(data$individual))
+
+# Only varying body density
+pred.df.BD <- data.frame(Vair = data$Vair, BD = data$BD, max_depth = mean(data$max_depth), individual = factor(data$individual))
+
+```
+
+Here, we will only predict from the fixed effects from the mixed model, using the nlme package.
+The fixed effect can be accessed by introducing the re.form = NA argument in the predict function - this will enable the predict function to ignore the random effect and give you the predictions based on the fixed effects.
+
+When constructing a linear model and confidence intervals, it is best to bootstrap the values using the bootMer() function from lmer4.
+
+```{r}
+# Now getting the confidence intervals from only the fixed effects:
+
+#-----
+# Depth
+
+# Function to apply to each bootstrap sample
+boot_fn1 <- function(data, indices) {
+  # Refit model on the bootstrap sample
+  fit <- update(final, data = data[indices, ])
+  # Predict from the refitted model
+  return(predict(fit, newdata=pred.df.dep, level = 0))
+}
+
+boot.dep <- boot(data = data, statistic = boot_fn1, R = 1000)
+
+# Calculate confidence intervals and summary statistics
+pred.df.dep$Vair.pred.dep.CI.fit <- boot.dep$t0
+pred.df.dep$Vair.pred.dep.CI.lwr <- apply(boot.dep$t, 2, quantile, probs = 0.025)
+pred.df.dep$Vair.pred.dep.CI.upr <- apply(boot.dep$t, 2, quantile, probs = 0.975)
+
+#-----
+# BD
+
+# Function to apply to each bootstrap sample
+boot_fn3 <- function(data, indices) {
+  # Refit model on the bootstrap sample
+  fit <- update(final, data = data[indices, ])
+  # Predict from the refitted model
+  return(predict(fit, newdata=pred.df.BD, level = 0))
+}
+
+boot.BD <- boot(data = data, statistic = boot_fn3, R = 1000)
+
+# Calculate confidence intervals and summary statistics
+pred.df.BD$Vair.pred.BD.CI.fit <- boot.BD$t0
+pred.df.BD$Vair.pred.BD.CI.lwr <- apply(boot.BD$t, 2, quantile, probs = 0.025)
+pred.df.BD$Vair.pred.BD.CI.upr <- apply(boot.BD$t, 2, quantile, probs = 0.975)
+
+# Insert the raw data into the dataframe (holding body density constant and duration)
+pred.df.dep$Vair <- data$Vair
+pred.df.dep$pred <- predict(final, data, type="response") # This is for the data points for the marginal effects plot
+
+# Calculate predicted values (holding duration and Max_depth):
+pred.df.BD$Vair <- data$Vair
+pred.df.BD$pred <- predict(final, data, type="response") # This is for the data points for the marginal effects plot
+```
+
+## Data Visualisation
+
+```{r}
+# Change the name of individuals into the ID name
+# Max depth
+pred.df.dep$individual <- as.character(pred.df.dep$individual)
+
+# BD
+pred.df.BD$individual <- as.character(pred.df.BD$individual)
+
+# Color-blind friendly colors:
+color_palette <- c("ml17_280a" = "#009E73", "ml17_301a" = "#0072B2", "ml18_292a" = "#56B4E9", "ml18_294a" = "#F0E442", "ml18_294b" = "#E69F00", "ml19_295a" = "#D55E00")
+
+# Plot a marginal-effects plot for Vair ~ depth
+depth <- ggplot() +
+  geom_point(alpha = 0.5, size = 3, data = pred.df.dep, aes(max_depth, Vair, color = "black")) + 
+     geom_point(alpha = 0.5, size = 3, data = pred.df.dep, aes(max_depth, Vair, color = individual)) + 
+  ylab(expression(paste("DRAV (", "ml ", kg^-1, ")", sep=""))) + 
+  xlab("Maximum dive depth (m)") + 
+  scale_color_manual(values = color_palette) + 
+  theme_linedraw(base_size = 15) +
+    theme(legend.title=element_text(size=15),
+        legend.text=element_text(size=15),
+        axis.title=element_text(size=15),
+        axis.text=element_text(size=15))+ 
+     geom_ribbon(data = pred.df.dep, aes(max_depth, Vair, ymin = Vair.pred.dep.CI.lwr, ymax = Vair.pred.dep.CI.upr, color = NULL), alpha = .2) +
+     geom_line(data = pred.df.dep, aes(max_depth, Vair.pred.dep.CI.fit),  alpha = .7, size = 1) + 
+  theme(legend.position = "none")+
+  guides(color=guide_legend(override.aes=list(fill=NA)))
+
+# Plot a marginal-effects plot for Vair ~ Body density
+BD <- ggplot() +
+  geom_point(alpha = 0.5, size = 3, data = pred.df.BD, aes(BD, Vair,  color = "black")) +
+     geom_point(alpha = 0.5, size = 3, data = pred.df.BD, aes(BD, Vair,  color = individual)) + 
+  ylab(expression(paste("DRAV (", "ml ", kg^-1, ")", sep=""))) +
+  xlab(expression(paste(
+    "Tissue density (", "kg ", m^-3, ")", sep=""))) + 
+  scale_color_manual(values = color_palette) + 
+  theme_linedraw(base_size = 15) +
+      theme(legend.title=element_text(size=15),
+        legend.text=element_text(size=15),
+        axis.title=element_text(size=15),
+        axis.text=element_text(size=15))+ 
+  theme(legend.key=element_blank()) +
+     geom_ribbon(data = pred.df.BD, aes(BD, Vair, ymin = Vair.pred.BD.CI.lwr, ymax = Vair.pred.BD.CI.upr, color = NULL), alpha = .2) +
+     geom_line(data = pred.df.BD, aes(BD, Vair.pred.BD.CI.fit), 
+               alpha = .7, linewidth = 1) +
+  guides(color=guide_legend(override.aes=list(fill=NA)))
+
+# Plot together
+ggsave(
+  "BD_Vair_ND_NEW_ggsave.png",
+  ggarrange(depth, BD, ncol = 1, nrow = 2, common.legend = TRUE,
+          labels=c("A", "B"),
+          font.label = list(size = 25, color = "black"),
+          legend="bottom"),
+  width = 180,
+  height = 210,
+  unit = "mm",
+  dpi = 1200
+)
+```
+
+```{r}
+# Notes: predictor labels (pred.labels) should be listed from top to bottom; dv.labels= the name of the response variable that will be at the top of the table.
+
+sjPlot::tab_model(final,
+                  pred.labels =c("(Intercept)", "Dive depth", "Body density"),
+                  dv.labels= "Effects on DRAV")
+
+```
+
+# Depth at which Neutral Buoyancy is Achieved
+
+```{r neutral-buoyancy-functions}
+# Function to compute required air volume for neutral buoyancy
+air_volume_for_NB <- function(BD, depth, g = 9.81, water_density = 1025, m = 300, Pair = 1.23) {
+  pressure_term <- (water_density - Pair * (1 + 0.1 * depth)) / (1 + 0.1 * depth)
+  Vair <- (m * (1 - (water_density / BD))) / pressure_term
+  return(Vair)
+}
+
+# Generate NB dataframe for selected depths and BD range
+create_NB_dataframe <- function(BD_range, depths = c(10, 20, 30), g = 9.81, water_density = 1025, m = 300) {
+  do.call(rbind, lapply(BD_range, function(BD) {
+    do.call(rbind, lapply(depths, function(depth) {
+      data.frame(
+        BD = BD,
+        Vair = air_volume_for_NB(BD, depth, g, water_density, m),
+        Depth = depth
+      )
+    }))
+  }))
+}
+
+# Rescale utility
+rescale <- function(x, from = range(x), to = c(1, 100)) {
+  (x - from[1]) / diff(from) * diff(to) + to[1]
+}
+
+# Extract colour from gradient for each depth
+extract_colour <- function(low, high, depths, depth_range) {
+  palette <- colorRampPalette(c(low, high))(100)
+  indices <- as.integer(rescale(depths, from = depth_range, to = c(1, 100)))
+  palette[indices]
+}
+```
+
+```{r add-NB-lines}
+# Overlay theoretical NB lines with colour-matched to observed points
+add_NB_lines <- function(plot, nb_df, data, m = 400) {
+  nb_df$Vair_mlkg <- nb_df$Vair * 1e6 / m
+  depth_range <- range(data$depth_NB)
+  colours <- extract_colour("blue", "red", unique(nb_df$Depth), depth_range)
+
+  plot +
+    new_scale_color() +
+    geom_line(data = nb_df, aes(x = BD, y = Vair_mlkg, colour = factor(Depth), group = Depth), size = 1.2) +
+    scale_color_manual(values = setNames(colours, unique(nb_df$Depth)),
+                       name = "Calculated depth at neutral buoyancy (m)") +
+    theme_linedraw(base_size = 14) +
+    theme(legend.position = "bottom",
+          legend.title = element_text(size = 12),
+          legend.text = element_text(size = 12)) +
+    guides(colour = guide_legend(title.position = "top"))
+}
+```
+
+```{r build-NB-plot}
+# Generate BD–Vair theoretical curves
+BD_range <- seq(1033.5, 1041.5, by = 0.1)
+nb_df <- create_NB_dataframe(BD_range)
+
+NB_dep <- ggplot() +
+  geom_point(alpha = 0.5, size = 3, data = data, aes(BD, Vair, color = depth_NB)) + 
+  ylab(expression(paste("DRAV (", "ml ", kg^-1, ")", sep=""))) +
+  xlab(expression(paste(
+    "Tissue density (", "kg ", m^-3, ")", sep=""))) + 
+# Set a color gradient for the continuous 'BD' variable with an expression label
+  scale_color_gradient(low = "blue", high = "red", 
+                       name = "Depth at neutral buoyancy (m)") +
+  xlim(min(data$BD) - 0.5, max(data$BD) + 0.5) + 
+  ylim(min(data$Vair) - 1, max(data$Vair) + 1)
+
+# Overlay and display
+NB_dep_with_lines <- add_NB_lines(NB_dep, nb_df, data)
+print(NB_dep_with_lines)
+
+# Save figure
+ggsave("NB_dep_lines.png", NB_dep_with_lines,
+       width = 210, height = 160, units = "mm", dpi = 1200)
+```
+
+## Notes
+- DRAV values are converted to ml/kg assuming 300 kg body mass.
+- Theoretical NB curves are derived from a simplified buoyancy model.
+- Colours are matched to data using a custom rescaling function.
+
+# Sensitivity analysis to different drag coefficients
+
+## Read in DRAV estimates from different drag coefficients
+
+```{r}
+#Criteria for analysis
+criteria_Vair <- function(data) {
+  data <- subset(data, avg_pitch <= -60)
+  data <- subset(data, glide_duration >= 10)
+  data <- subset(data, initial_depth <= 30)
+  data <- subset(data, cvar_pitch < 0.1)
+  data <- subset(data, cvar_roll < 0.1)
+  data <- subset(data, Vair > 0)
+  print(length(data$Vair))
+  
+  return(data)
+}
+
+setwd("/Volumes/GEORGE_STORE/DRAV")
+df_Vair0.02 <- read.csv("Vair_hypothesis_testing_0.02.csv")
+df_Vair0.03 <- read.csv("Vair_hypothesis_testing_0.03.csv")
+df_Vair0.04 <- read.csv("Vair_hypothesis_testing_0.04.csv")
+df_Vair0.05 <- read.csv("Vair_hypothesis_testing_0.05.csv")
+
+df_Vair0.02 <- criteria_Vair(df_Vair0.02)
+df_Vair0.03 <- criteria_Vair(df_Vair0.03)
+df_Vair0.04 <- criteria_Vair(df_Vair0.04)
+df_Vair0.05 <- criteria_Vair(df_Vair0.05)
+
+```
+
+## Find the mean and SD for the DRAV estimates for each drag coefficeint:
+```{r}
+round(mean(df_Vair0.02$Vair),1)
+round(sd(df_Vair0.02$Vair),1)
+round(mean(df_Vair0.03$Vair),1)
+round(sd(df_Vair0.03$Vair),1)
+round(mean(df_Vair0.04$Vair),1)
+round(sd(df_Vair0.04$Vair),1)
+round(mean(df_Vair0.05$Vair),1)
+round(sd(df_Vair0.05$Vair),1)
+```
+
+## Find the model summary and R-squared estimates for the range of drag coefficients:
+```{r}
+# Checking whether the results change with different drag coefficients
+final0.02 <- lme(Vair ~ max_depth + BD, random = ~1|individual, 
+                 correlation = corAR1(form = ~ 1|individual), data = df_Vair0.02)
+final0.03 <- lme(Vair ~ max_depth + BD, random = ~1|individual, 
+                 correlation = corAR1(form = ~ 1|individual), data = df_Vair0.03)
+final0.04 <- lme(Vair ~ max_depth + BD, random = ~1|individual, 
+                 correlation = corAR1(form = ~ 1|individual), data = df_Vair0.04)
+final0.05 <- lme(Vair ~ max_depth + BD, random = ~1|individual, 
+                 correlation = corAR1(form = ~ 1|individual), data = df_Vair0.05)
+
+# Check the summary 
+summary(final0.02)
+summary(final0.03)
+summary(final0.04)
+summary(final0.05)
+
+# Check the R-squared values
+r.squaredGLMM(final0.02)
+r.squaredGLMM(final0.03)
+r.squaredGLMM(final0.04)
+r.squaredGLMM(final0.05)
+```
+
+## Find the model summary and R-squared estimates for the kinematic correlation:
+
+```{r}
+#--
+# Depth of stroke cessation ~ DRAV
+m0.02 <- lme(initial_depth ~ Vair, random = ~1|individual, 
+                 correlation = corAR1(form = ~ 1|individual), data = df_Vair0.02)
+m0.03 <- lme(initial_depth ~ Vair, random = ~1|individual, 
+                 correlation = corAR1(form = ~ 1|individual), data = df_Vair0.03)
+m0.04 <- lme(initial_depth ~ Vair, random = ~1|individual, 
+                 correlation = corAR1(form = ~ 1|individual), data = df_Vair0.04)
+m0.05 <- lme(initial_depth ~ Vair, random = ~1|individual, 
+                 correlation = corAR1(form = ~ 1|individual), data = df_Vair0.05)
+
+# Check the summary 
+summary(m0.02)
+summary(m0.03)
+summary(m0.04)
+summary(m0.05)
+
+# Check the R-squared values
+r.squaredGLMM(m0.02)
+r.squaredGLMM(m0.03)
+r.squaredGLMM(m0.04)
+r.squaredGLMM(m0.05)
+
+#--
+# RMS sway dynamic acceleration ~ DRAV
+# Reading the Vair estimates with the kinematic parameters
+df_stroke0.02 <- read.csv("stroke_Vair_analysis_0.02.csv")
+df_stroke0.03 <- read.csv("stroke_Vair_analysis_0.03.csv")
+df_stroke0.04 <- read.csv("stroke_Vair_analysis_0.04.csv")
+df_stroke0.05 <- read.csv("stroke_Vair_analysis_0.05.csv")
+
+df_stroke0.02 <- criteria_Vair(df_stroke0.02)
+df_stroke0.03 <- criteria_Vair(df_stroke0.03)
+df_stroke0.04 <- criteria_Vair(df_stroke0.04)
+df_stroke0.05 <- criteria_Vair(df_stroke0.05)
+
+m0.02 <- lme(total_rms ~ Vair, random = ~1|individual, 
+                 correlation = corAR1(form = ~ 1|individual), data = df_stroke0.02)
+m0.03 <- lme(total_rms ~ Vair, random = ~1|individual, 
+                 correlation = corAR1(form = ~ 1|individual), data = df_stroke0.03)
+m0.04 <- lme(total_rms ~ Vair, random = ~1|individual, 
+                 correlation = corAR1(form = ~ 1|individual), data = df_stroke0.04)
+m0.05 <- lme(total_rms ~ Vair, random = ~1|individual, 
+                 correlation = corAR1(form = ~ 1|individual), data = df_stroke0.05)
+
+# Check the summary 
+summary(m0.02)$tTable
+summary(m0.03)$tTable
+summary(m0.04)$tTable
+summary(m0.05)$tTable
+
+# Check the R-squared values
+r.squaredGLMM(m0.02)
+r.squaredGLMM(m0.03)
+r.squaredGLMM(m0.04)
+r.squaredGLMM(m0.05)
+
+```
+
