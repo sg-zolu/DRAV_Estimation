@@ -314,7 +314,7 @@ BD <- ggplot() +
 
 # Plot together
 ggsave(
-  "BD__MD_Vair_ggsave.png",
+  "BD_MD_Vair_ggsave.png",
   ggarrange(depth, BD, ncol = 1, nrow = 2, common.legend = TRUE,
           labels=c("A", "B"),
           font.label = list(size = 25, color = "black"),
