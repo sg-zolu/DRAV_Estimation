@@ -33,6 +33,8 @@ data
 ---
 
 ## R Package Dependencies
+The analyses were done using R version 4.4.3
+
 The following packages are required:
 - `nlme` – for linear mixed-effects models
 - `MuMIn` – for AIC-based model selection and R-squared values
